@@ -80,6 +80,12 @@ public final class FlvExtractor implements Extractor, SeekMap {
   private AudioTagPayloadReader audioReader;
   private VideoTagPayloadReader videoReader;
   private ScriptTagPayloadReader metadataReader;
+  
+  private volatile boolean skippingForward;
+  private volatile boolean skipForward;
+
+  long firstSkippedAudioTime = -1;
+  long tsDelta = 0;
 
   public FlvExtractor() {
     scratch = new ParsableByteArray(4);
@@ -87,6 +93,13 @@ public final class FlvExtractor implements Extractor, SeekMap {
     tagHeaderBuffer = new ParsableByteArray(FLV_TAG_HEADER_SIZE);
     tagData = new ParsableByteArray();
     parserState = STATE_READING_FLV_HEADER;
+  }
+
+  public void skipForward() {
+    skipForward = true;
+  }
+  public void clearSkip() {
+    skipForward = false;
   }
 
   @Override
@@ -121,8 +134,9 @@ public final class FlvExtractor implements Extractor, SeekMap {
   }
 
   @Override
-  public void init(ExtractorOutput output) {
+  public void init(final ExtractorOutput output) {
     this.extractorOutput = output;
+
   }
 
   @Override
@@ -136,6 +150,7 @@ public final class FlvExtractor implements Extractor, SeekMap {
     // Do nothing
   }
 
+  byte[] peekSpace = new byte[1];
   @Override
   public int read(ExtractorInput input, PositionHolder seekPosition) throws IOException,
       InterruptedException {
@@ -232,6 +247,7 @@ public final class FlvExtractor implements Extractor, SeekMap {
     tagDataSize = tagHeaderBuffer.readUnsignedInt24();
     tagTimestampUs = tagHeaderBuffer.readUnsignedInt24();
     tagTimestampUs = ((tagHeaderBuffer.readUnsignedByte() << 24) | tagTimestampUs) * 1000L;
+    tagTimestampUs -= tsDelta;
     tagHeaderBuffer.skipBytes(3); // streamId
     parserState = STATE_READING_TAG_DATA;
     return true;
@@ -247,9 +263,18 @@ public final class FlvExtractor implements Extractor, SeekMap {
    */
   private boolean readTagData(ExtractorInput input) throws IOException, InterruptedException {
     boolean wasConsumed = true;
-    if (tagType == TAG_TYPE_AUDIO && audioReader != null) {
+    if (tagType == TAG_TYPE_AUDIO && audioReader != null && skipForward && !skippingForward) {
+      firstSkippedAudioTime = tagTimestampUs;
+      skippingForward = true;
+    }
+    if (tagType == TAG_TYPE_AUDIO && audioReader != null && !skipForward && skippingForward) {
+      tsDelta += tagTimestampUs - firstSkippedAudioTime;
+      tagTimestampUs = firstSkippedAudioTime;
+      skippingForward = false;
+    }
+    if (tagType == TAG_TYPE_AUDIO && audioReader != null && !skippingForward) {
       audioReader.consume(prepareTagData(input), tagTimestampUs);
-    } else if (tagType == TAG_TYPE_VIDEO && videoReader != null) {
+    } else if (tagType == TAG_TYPE_VIDEO && videoReader != null && !skippingForward) {
       videoReader.consume(prepareTagData(input), tagTimestampUs);
     } else if (tagType == TAG_TYPE_SCRIPT_DATA && metadataReader != null) {
       metadataReader.consume(prepareTagData(input), tagTimestampUs);

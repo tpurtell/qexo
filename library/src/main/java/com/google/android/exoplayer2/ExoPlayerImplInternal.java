@@ -165,7 +165,7 @@ import java.io.IOException;
   private MediaPeriodHolder playingPeriodHolder;
 
   private Timeline timeline;
-
+  
   public ExoPlayerImplInternal(Renderer[] renderers, TrackSelector trackSelector,
       LoadControl loadControl, boolean playWhenReady, Handler eventHandler,
       PlaybackInfo playbackInfo, ExoPlayer player) {

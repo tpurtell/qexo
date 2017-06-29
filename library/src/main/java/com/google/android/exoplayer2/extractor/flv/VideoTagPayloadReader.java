@@ -46,8 +46,9 @@ import com.google.android.exoplayer2.video.AvcConfig;
   private int nalUnitLengthFieldLength;
 
   // State variables.
-  private boolean hasOutputFormat;
   private int frameType;
+
+  private FlvExtractor.VideoFormatChangedListener listener;
 
   /**
    * @param output A {@link TrackOutput} to which samples should be written.
@@ -82,7 +83,7 @@ import com.google.android.exoplayer2.video.AvcConfig;
     int compositionTimeMs = data.readUnsignedInt24();
     timeUs += compositionTimeMs * 1000L;
     // Parse avc sequence header in case this was not done before.
-    if (packetType == AVC_PACKET_TYPE_SEQUENCE_HEADER && !hasOutputFormat) {
+    if (packetType == AVC_PACKET_TYPE_SEQUENCE_HEADER) {
       ParsableByteArray videoSequence = new ParsableByteArray(new byte[data.bytesLeft()]);
       data.readBytes(videoSequence.data, 0, data.bytesLeft());
       AvcConfig avcConfig = AvcConfig.parse(videoSequence);
@@ -92,7 +93,9 @@ import com.google.android.exoplayer2.video.AvcConfig;
           Format.NO_VALUE, Format.NO_VALUE, avcConfig.width, avcConfig.height, Format.NO_VALUE,
           avcConfig.initializationData, Format.NO_VALUE, avcConfig.pixelWidthAspectRatio, null);
       output.format(format);
-      hasOutputFormat = true;
+      if (listener != null) {
+        listener.onVideoFormatChanged(format);
+      }
     } else if (packetType == AVC_PACKET_TYPE_AVC_NALU) {
       // TODO: Deduplicate with Mp4Extractor.
       // Zero the top three bytes of the array that we'll use to decode nal unit lengths, in case
@@ -127,4 +130,7 @@ import com.google.android.exoplayer2.video.AvcConfig;
     }
   }
 
+  void setListener(FlvExtractor.VideoFormatChangedListener listener) {
+    this.listener = listener;
+  }
 }
